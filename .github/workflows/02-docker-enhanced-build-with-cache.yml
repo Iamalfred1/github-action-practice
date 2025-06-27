@@ -9,7 +9,7 @@ on:
         branches: [main]
 
 env:
-    IMAGE_NAME: imalfred7/allhands01
+    IMAGE_NAME: iamalfred7/allhands01
 
 jobs:
     build-image:
