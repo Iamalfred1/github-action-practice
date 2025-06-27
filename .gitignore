@@ -1,0 +1,13 @@
+TODO-*.ymal
+
+# Build outputs
+*.log
+.cache/
+build/
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/

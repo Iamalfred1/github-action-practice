@@ -1,6 +1,7 @@
 services:
   allhands22:
     image: "${TESTING_IMAGE}"
+    # Updated for cache testing
   
   postgres:
     image: postgres
