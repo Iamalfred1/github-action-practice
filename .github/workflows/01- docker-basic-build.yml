@@ -22,13 +22,13 @@ jobs:
                 password: ${{ secrets.DOCKER_ACCESS_TOKEN }}
             
             - name: Build Docker image
-              run: docker build -t allhand01/allhands01:test .
+              run: docker build -t iamalfred7/allhands01:test .
 
             - name: push image to docker hub
               if: github.ref == 'refs/heads/main'
               run: |
-                docker tag allhand01/allhands01:test allhand01/allhands01:latest
-                docker push allhand01/allhands01:latest
+                docker tag iamalfred7/allhands01:test iamalfred7/allhands01:latest
+                docker push iamalfred7/allhands01:latest
 
             - name: Show result
               run: |
