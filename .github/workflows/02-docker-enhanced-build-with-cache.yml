@@ -33,7 +33,7 @@ jobs:
               uses: docker/build-push-action@v6
               with:
                 context: .
-                push: ${{ github.event_name != 'pull_request' }}
+                push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
                 tags: |
                     ${{ env.IMAGE_NAME }}:latest
                     ${{ env.IMAGE_NAME }}:02-cache
