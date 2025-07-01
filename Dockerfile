@@ -1,7 +1,10 @@
 # sample dockerfile for testing docker builds
-FROM nginx:1.20-alpine AS base
+FROM nginx:1.26-alpine AS base
 
-RUN apk add --no-cache curl
+RUN apk update && \
+    apk upgrade && \
+    apk add --no-cache curl && \
+    rm -rf /var/cache/apk/*
 
 WORKDIR /test
 
