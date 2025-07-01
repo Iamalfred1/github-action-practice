@@ -68,6 +68,3 @@ jobs:
                 echo ""
                 echo "Labels:"
                 echo "${{ steps.meta.outputs.lebels }}" | sed 's/,/\n/g' | sed 's/^/  •  /'
-                echo ""
-                echo "JSON Output:"
-                echo "${{ steps.meta.outputs.json }}"
