@@ -42,7 +42,6 @@ jobs:
                     type=raw,value=04-metadata
                     type=raw,value=latest,enable={{is_default_branch}}
                     type=ref,event=branch
-                    type=ref,event=pr,prefix=pr-
                 labels: |
                     org.opencontainers.image.title=AllHands Demo App
                     org.opencontainers.image.description=Learning Docker and Kubernetes
