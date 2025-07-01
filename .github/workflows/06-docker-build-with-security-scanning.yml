@@ -58,7 +58,6 @@ jobs:
 
             - name: Security scan - Critical Gate (blocking)
               uses: aquasecurity/trivy-action@master
-              if: github.event_name == 'pull_request'
               with:
                 image-ref: scan-image:${{ github.run_id }}
                 exit-code: 1
