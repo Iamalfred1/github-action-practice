@@ -67,4 +67,4 @@ jobs:
                 echo "${{ steps.meta.outputs.tags }}" | sed 's/,/\n/g' | sed 's/^/  •  /'
                 echo ""
                 echo "Labels:"
-                echo "${{ steps.meta.outputs.lebels }}" | sed 's/,/\n/g' | sed 's/^/  •  /'
+                echo "${{ steps.meta.outputs.labels }}" | sed 's/,/\n/g' | sed 's/^/  •  /'
