@@ -7,7 +7,7 @@ on:
         branches: [main]
 
 env:
-    IMAGE_NAME: iamalfred07/allhands01
+    IMAGE_NAME: iamalfred7/allhands01
     PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
