@@ -15,6 +15,11 @@ jobs:
         name: Integration Tests and Security scanning
         runs-on: ubuntu-latest
 
+        permissions:
+            contents: read
+            pull-requests: write
+            security-events: write
+
         steps:
             - name: Checkout Repository
               uses: actions/checkout@v4
