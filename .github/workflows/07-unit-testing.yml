@@ -142,7 +142,7 @@ jobs:
               id: meta
               uses: docker/metadata-action@v5
               with:
-                image: ${{ env.IMAGE_NAME }}
+                images: ${{ env.IMAGE_NAME }}
                 flavor: |
                     latest=false
                 tags: |
