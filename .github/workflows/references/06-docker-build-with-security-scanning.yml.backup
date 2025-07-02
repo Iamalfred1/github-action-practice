@@ -139,3 +139,4 @@ jobs:
 
                     ---
                     *Scan completed at: ${{ github.event.head_commit.timestamp }}
+                    
