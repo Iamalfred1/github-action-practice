@@ -91,7 +91,7 @@ jobs:
                     org.opencontainers.image.vendor=Fred's Learning Project
 
             - name: Build and push production image
-              if: success() && github.ref == 'refs/heads/main'
+              if: github.ref == 'refs/heads/main'
               uses: docker/build-push-action@v6
               with:
                 context: .
