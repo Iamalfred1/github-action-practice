@@ -88,13 +88,33 @@ jobs:
                 body-includes: Security Scan Results
 
             - name: Create or Update security comment
-              uses: peter-evens/find-comment@v3
+              uses: peter-evens/create-or-update-comment@v4
               if: github.event_name == 'pull_request'
               with:
                 comment-id: ${{ steps.find_comment.outputs.comment-id }}
                 issue-number: ${{ github.event.pull_request.number }}
                 edit-mode: replace
                 body: |
+                    ## Security Scan Result
+
+                    ** Trivy Security Scan Completed **
+
+                    ### Scan Summary:
+                    - **Image:** `scan-image:${{ github.run_id }}`
+                    - **Scanner:** Trivy (Latest)
+                    - **Status:** ${{ steps.trivy_report.outcome }}
+
+                    ### Detailed Results:
+                    Check the **Security** tab in this repository for detailed vulnerability reports.
+
+                    ### Security Best Practices:
+                    - Keep base images updates
+                    - Use specific version tags (not `latest`)
+                    - Regular security scanning
+                    - Monitor for new CVEs
+
+                    ---
+                    *Scan completed at: ${{ github.event.head_commit.timestamp }}
                 
     build-production:
         name: Build Image Production
