@@ -146,11 +146,16 @@ jobs:
                 kubectl expose deployment myapp --port=80 --target-port=80 --name=myapp-service || echo "Service already exists"
                 kubectl get service myapp-service
 
-                kubectl port-forward service/myapp-service 8080:80 || {
+                kubectl port-forward service/myapp-service 8080:80 & 
+                PF_PID=$!
+                sleep 5
+
+                curl --fail --silent --show-error http://localhost:8080 || {
                     echo "Service accessibility test failed"
                     kill $PF_PID 2>/dev/null
                     exit 1
                 }
+
                 echo "Test 3 passed: Service accessibility"
 
                 kill $PF_PID 2>/dev/null
@@ -165,7 +170,9 @@ jobs:
 
                 kubectl describe deployment/myapp > k8s-logs/deployment.txt 2>/dev/null || true
                 kubectl get pods -l app=myapp -o yaml > k8s-logs/pods.yaml 2>/dev/null || true
+
                 kubectl logs deployment/myapp --tail=100 > k8s-logs/app-logs.txt 2>/dev/null || true
+                
                 kubectl get events --sort-by=.metadata.creationTimestamp > k8s-logs/events.txt 2>/dev/null || true
 
                 echo "Logs collected in k8s-logs/ directory"
