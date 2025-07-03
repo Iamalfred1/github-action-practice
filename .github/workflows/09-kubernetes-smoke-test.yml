@@ -103,7 +103,7 @@ jobs:
                 echo "Check cluster status..."
                 kubectl cluster-info
                 kubectl get nodes -o wide
-                kubectl get pods --all-namespace
+                kubectl get pods --all-namespaces
 
                 kubectl wait --for=condition=Ready nodes --all --timeout=60s
 
