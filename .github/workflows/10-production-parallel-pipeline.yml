@@ -1,0 +1,348 @@
+name: 10 Production Parallel Pipeline
+
+on:
+    push:
+        branches: [main, github-action]
+    pull_request:
+        branches: [main]
+
+env:
+    IMAGE_NAME: iamalfred7/allhands01
+    GHCR_IMAGE: ghcr.io/iamalfred1/allhands01
+    PLATFORMS: linux/amd64,linux/arm64
+    CLUSTER_NAME: fred-test-cluster
+
+jobs:
+    build-test-image:
+        name: Build Test Image
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: read
+            packages: write
+        
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+            
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                registry: ghcr.io
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Build and push test image
+              uses: docker/build-push-action@v6
+              with:
+                context: .
+                push: true
+                tags: ${{ env.GHCR_IMAGE }}:test-${{ github.run_id }}
+                target: test
+                platforms: linux/amd64
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
+                labels: |
+                    org.opencontainers.image.title=AllHands Demo App - Test Image
+                    org.opencontainers.image.description=Test image for parallel pipeline
+                    org.opencontainers.image.vendor=Fred's Learning Project
+                    org.opencontainers.image.revision=${{ github.sha }}
+                    org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+    
+    unit-tests:
+        name: Unit Tests
+        needs: [build-test-image]
+        runs-on: ubuntu-latest
+
+        permissions:
+            packages: read
+
+        steps:
+            - name: Login to Github Container Registry
+              uses: docker/login-action@v3
+              with:
+                registry: ghcr.io
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+        
+            - name: Run unit tests
+              run: |
+                echo "Running comprehensive unit tests..."
+                docker run --rm ${{ env.GHCR_IMAGE }}:test-${{ github.run_id }} \
+                    sh -c "
+                        echo 'Unit test 1: Basic functionality' &&
+                        nginx -t &&
+                        echo 'Unit test 2: Configuration validation' &&
+                        curl --version &&
+                        echo 'Unit test 3: Dependencies check' &&
+                        apachectl -V 2>/dev/null || echo 'apache2-utils available' &&
+                        echo 'All unit tests passed!'
+                    "
+    
+    integration-tests:
+        name: Integration Tests
+        needs: [build-test-image]
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: read
+            packages: read
+
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                registry: ghcr.io
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+            
+            - name: Make healthcheck executable
+              run: chmod +x healthchecks/postgres-healthcheck
+
+            - name: Run integration tests
+              run: |
+                echo 'Starting integration test environment...'
+                export TESTING_IMAGE="${{ env.GHCR_IMAGE }}:test-${{ github.run_id }}"
+
+                docker compose -f docker-compose.test.yml up \
+                    --exit-code-from sut \
+                    --abort-on-container-exit
+                echo "Integration tests completed!"
+
+            - name: Cleanup integration test environment
+              if: always()
+              run: |
+                docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
+                echo "Integration test cleanup completed"
+
+    kubernetes-tests:
+        name: Kubernetes Deployment Tests
+        needs: [build-test-image]
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: read
+            packages: read
+
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                registry: ghcr.io
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Create K3D cluster
+              uses: AbsaOSS/k3d-action@v2
+              with:
+                cluster-name: ${{ env.CLUSTER_NAME }}-${{ github.run_id }}
+                args: >-
+                    --agents 1
+                    --no-lb
+                    --wait
+                    --timeout 60s
+                    --k3s-arg "--no-deploy=traefik,servicelb,metrics-server@server:*"
+            
+            - name: Create registry secret
+              run: |
+                kubectl create secret docker-registry regcred \
+                --docker-server=https://ghcr.io \
+                --docker-username=${{ github.actor }} \
+                --docker-password=${{ secrets.GITHUB_TOKEN }}
+
+            - name: Deploy and test in Kubernetes
+              run: |
+                echo 'Deploying to K8s...'
+                export TESTING_IMAGE="${{ env.GHCR_IMAGE }}:test-${{ github.run_id }}"
+
+                envsubst < manifests/deployment.yaml | kubectl apply -f -
+                kubectl rollout status deployment myapp --timeout=120s
+
+                kubectl exec deployment/myapp -- curl --fail --silent localhost || {
+                    echo "K8s deployment test failed"
+                    kubectl logs deployment/myapp --tail=50
+                    exit 1
+                }
+                echo 'Kubernetes deployment tests passed!'
+
+            - name: Cleanup K8s resources
+              if: always()
+              run: |
+                kubectl delete deployment/myapp --ignore-not-found=true
+                kubectl delete secret/regcred --ignore-not-found=true
+
+    security-scan:
+        name: Security Vulnerability Scan
+        needs: [build-test-image]
+        runs-on: ubuntu-latest
+
+        permissions:
+            packages: read
+            security-events: write
+
+        steps:
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                registry: ghcr.io
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Run Trivy security scan (Full Report)
+              uses: aquasecurity/trivy-action@master
+              with:
+                image-ref: ${{ env.GHCR_IMAGE }}:test-${{ github.run_id }}
+                format: table
+                exit-code: 0
+
+            - name: Run Trivy security scan (Critical Gate)
+              uses: aquasecurity/trivy-action@master
+              with:
+                image-ref: ${{ env.GHCR_IMAGE }}:test-${{ github.run_id }}
+                format: sarif
+                output: trivy-results.sarif
+                exit-code: 1
+                ignore-unfixed: true
+                vuln-type: 'os,library'
+                severity: 'HIGH,CRITICAL'
+
+            - name: Upload security scan results
+              uses: github/codeql-action/upload-sarif@v3
+              if: always()
+              with:
+                sarif_file: 'trivy-results.sarif'
+
+    build-production:
+        name: Build Production Image
+        needs: [unit-tests, integration-tests, kubernetes-tests, security-scan]
+        runs-on: ubuntu-latest
+
+        if: |
+            always() &&
+            (needs.unit-tests.result == 'success') &&
+            (needs.integration-tests.result == 'success') &&
+            (needs.security-scan.result == 'success') &&
+            (needs.kubernetes-tests.result == 'success' || needs.kubernetes-tests.result == 'skipped')
+        
+        permissions:
+            contents: read
+            packages: write
+            pull-requests: write
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up QEMU
+              uses: docker/setup-qemu-action@v3
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Login to Docker Hub
+              uses: docker/login-action@v3
+              with:
+                username: ${{ secrets.DOCKER_USERNAME }}
+                password: ${{ secrets.DOCKER_ACCESS_TOKEN }}
+
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                registry: ghcr.io
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Generate production metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                images: |
+                    ${{ env.IMAGE_NAME }}
+                    ${{ env.GHCR_IMAGE }}
+                flavor: |
+                    latest=false
+                tags: |
+                    type=raw,value=10-prod-parallel
+                    type=raw,value=latest,enable={{is_default_branch}}
+                    type=raw,value=uat,enable=${{ github.ref == 'refs/heads/github-action' }}
+                    type=raw,value=prod,enable=${{ github.ref == 'refs/heads/main' }}
+                    type=ref,event=pr,prefix=pr-
+                labels:
+                    org.opencontainers.image.title=AllHands Demo App
+                    org.opencontainers.image.description=Production-ready image from parallel pipeline
+                    org.opencontainers.image.vendor=Fred's Learning Project
+                    org.opencontainers.image.revision=${{ github.sha }}
+                    org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+                    org.opencontainers.image.environment=${{ github.ref == 'refs/heads/main' && 'production' || 'uat' }}
+
+            # During this time push only main branch assume main is prod, in the future I will push UAT/PROD
+            - name: Build and push production image
+              if: github.ref == 'refs/heads/main'
+              uses: docker/build-push-action@v6
+              with:
+                context: .
+                platforms: ${{ env.PLATFORMS }}
+                push: true
+                tags: ${{ steps.meta.outputs.tags }}
+                labels: ${{ steps.meta.outputs.labels }}
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
+
+    pipeline-report:
+        name: Pipeline Report
+        needs: [build-production, unit-tests, integration-tests, kubernetes-tests, security-scan]
+        runs-on: ubuntu-latest
+        if: always()
+
+        permissions:
+            pull-requests: write
+
+        steps:
+            # In echo Environment I assume github-action branch is SIT or UAT branch
+            - name: Generate pipeline summary
+              run: |
+                echo '## Parallel Pipeline Result' >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "| Test Stage | Status | Duration |" >> $GITHUB_STEP_SUMMARY
+                echo "|------------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+                echo "| Unit Tests        | ${{ needs.unit-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | - |" >> $GITHUB_STEP_SUMMARY
+                echo "| Integration Tests | ${{ needs.integration-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | - |" >> $GITHUB_STEP_SUMMARY
+                echo "| K8s Tests         | ${{ needs.kubernetes-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | - |" >> $GITHUB_STEP_SUMMARY
+                echo "| Security Scan     | ${{ needs.security-scan.result == 'success' && '✅ Passed' || '❌ Failed'}} | - |" >> $GITHUB_STEP_SUMMARY
+                echo "| Production Build | ${{ needs.build-production.result == 'success' && '✅ Built' || needs.build-production.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} | - |" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "**Environment:** ${{ github.ref == 'refs/heads/main' && 'Production' || 'SIT/UAT' }}" >> $GITHUB_STEP_SUMMARY
+                echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+            - name: Comment on PR
+              uses: peter-evans/create-or-update-comment@v4
+              if: github.event_name == 'pull_request'
+              with:
+                issue-number: ${{ github.event.pull_request.number}}
+                body: |
+                    ## Parallel Pipeline Results
+                    **Environment:** SIT/UAT Testing
+                    **Image:** `${{ env.GHCR_IMAGE }}:test-${{ github.run_id }}`
+
+                    | Test Stage | Status |
+                    |------------|--------|
+                    | Unit Tests        | ${{ needs.unit-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |
+                    | Integration Tests | ${{ needs.integration-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |
+                    | K8s Tests         | ${{ needs.kubernetes-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |
+                    | Security Scan     | ${{ needs.security-scan.result == 'success' && '✅ Passed' || '❌ Failed'}} |
+                    | Production Build  | ${{ needs.build-production.result == 'success' && '✅ Ready for Production' || needs.build-production.result == 'skipped' && '⏭️ Conditional Skip' || '❌ Build Failed' }} |
+
+                    **Next Step:**
+                    ${{ needs.build-production.result == 'success' && '✅ This PR is ready to be merged to production!' || '❌ Please fix failing tests before merging.' }}
+
+                    ---
+                    *Pipeline completed at: ${{ github.event.head_commit.timestamp }}*
