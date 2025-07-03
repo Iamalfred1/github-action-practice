@@ -63,22 +63,36 @@ jobs:
                     org.opencontainers.image.revision=${{ github.sha }}
                     org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
 
-            - name: Security scan test image
+            - name: Security scan - Full report (non-blocking)
               uses: aquasecurity/trivy-action@master
               with:
                 image-ref: ${{ env.GHCR_IMAGE }}:test-${{ github.run_id }}
                 format: table
-                exit-code: 1
-                ignore-fixed: true
+                exit-code: 0
+
+            - name: Security scan test image - Critical Gate (blocking)
+              id: trivy_report
+              uses: aquasecurity/trivy-action@master
+              with:
+                image-ref: ${{ env.GHCR_IMAGE }}:test-${{ github.run_id }}
+                format: 'sarif'
                 vuln-type: 'os,library'
                 severity: 'HIGH,CRITICAL'
+                output: 'trivy-results.sarif'
+                exit-code: 1
+
+            - name: Upload Trivy scan result to GitHub security
+              uses: github/codeql-action/upload-sarif@v3
+              if: always()
+              with:
+                sarif_file: 'trivy-results.sarif'
 
             - name: Create K3D Kubernetes cluster
               uses: AbsaOSS/k3d-action@v2
               with:
                 cluster-name: ${{ env.CLUSTER_NAME }}
                 args: >-
-                    --agent 1
+                    --agents 1
                     --no-lb
                     --wait
                     --timeout 60s
@@ -220,7 +234,7 @@ jobs:
                     ### Test Summary:
                     - **Cluster:** K3D ${{ env.CLUSTER_NAME }}
                     - **Image:** `${{ env.GHCR_IMAGE }}:test-${{ github.run_id }}`
-                    - **Security Scan:** Passed (no HIGH/CRITICAL vulnerabilities)
+                    - **Security Scan:** ${{ steps.trivy_report.outcome}} (no HIGH/CRITICAL vulnerabilities)
 
                     ### Tests Performed:
                     - ✅ **Basic Connectivity** - Application responds to HTTP requests
