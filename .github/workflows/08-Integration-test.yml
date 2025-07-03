@@ -1,4 +1,4 @@
-name: 09 Integration Testing
+name: 08 Integration Testing
 
 on:
     push:
@@ -63,6 +63,9 @@ jobs:
               if: always()
               with:
                 sarif_file: 'trivy-results.sarif'
+            
+            - name: Make healthcheck executable
+              run: chmod +x healthchecks/postgres-healthcheck
 
             - name: Run integration tests
               run: |
@@ -101,7 +104,7 @@ jobs:
                     ** Trivy Security Scan Completed **
 
                     ### Scan Summary:
-                    - **Image:** `scan-image:${{ github.run_id }}`
+                    - **Image:** `integration-test-${{ github.run_id }}`
                     - **Scanner:** Trivy (Latest)
                     - **Status:** ${{ steps.trivy_report.outcome }}
 
