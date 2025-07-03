@@ -39,6 +39,22 @@ jobs:
                 cache-from: type=gha
                 cache-to: type=gha,mode=max
 
+            - name: Run integration tests
+              run: |
+                echo "Starting integration test environment..."
+                export TESTING_IMAGE="integration-test-${{ github.run_id }}"
+                docker compose -f docker-compose.test.yml up \
+                    --exit-code-from sut \
+                    --abort-on-container-exit
+                echo "Integration tests completed!"
+
+            - name: Cleanup test environment
+              if: always()
+              run: |
+                docker compose -f docker-compose.test.yml down -v 2>/dev/null || echo "No compose services to stop"
+                docker image rm integration-test-${{ github.run_id }} 2>/dev/null || echo "Test image already removed"
+                docker system prune -f || true
+
             - name: Security scan - Full report (non-blocking)
               id: trivy_report
               uses: aquasecurity/trivy-action@master
@@ -66,21 +82,6 @@ jobs:
             
             - name: Make healthcheck executable
               run: chmod +x healthchecks/postgres-healthcheck
-
-            - name: Run integration tests
-              run: |
-                echo "Starting integration test environment..."
-                export TESTING_IMAGE="integration-test-${{ github.run_id }}"
-                docker compose -f docker-compose.test.yml up \
-                    --exit-code-from sut \
-                    --abort-on-container-exit
-                echo "Integration tests completed!"
-
-            - name: Cleanup test environment
-              if: always()
-              run: |
-                docker compose -f docker-compose.test.yml down -v
-                docker image rm integration-test-${{ github.run_id }} || true
 
             - name: Find existing security comment
               uses: peter-evans/find-comment@v3
